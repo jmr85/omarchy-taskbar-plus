@@ -1,0 +1,35 @@
+{
+  "widget.pinApp": "Pin app",
+  "widget.pinTooltip": "Pin an app",
+  "widget.noPins": "Taskbar: no apps pinned — add an \"apps\" list to this widget's shell.json entry",
+  "widget.windows": {
+    "one": "%1 window",
+    "other": "%1 windows"
+  },
+  "widget.tooltip": {
+    "one": "%1 · %2 window",
+    "other": "%1 · %2 windows"
+  },
+  "action.newInstance": "New instance",
+  "action.pin": "Pin to taskbar",
+  "action.unpin": "Unpin",
+  "action.moveLeft": "Move left",
+  "action.moveRight": "Move right",
+  "action.moveUp": "Move up",
+  "action.moveDown": "Move down",
+  "action.moveToWorkspace": "Move to workspace…",
+  "action.closeWindow": "Close window",
+  "action.closeWindows": "Close windows",
+  "action.closePrompt": {
+    "one": "Close %1 window?",
+    "other": "Close %1 windows?"
+  },
+  "action.confirm": "Close",
+  "action.cancel": "Cancel",
+  "workspace.prompt": "Move to workspace",
+  "workspace.label": "Workspace %1",
+  "preview.more": {
+    "one": "%1 more window",
+    "other": "%1 more windows"
+  }
+}

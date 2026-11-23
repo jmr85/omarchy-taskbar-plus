@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "AppModel.js" as AppModel
 
@@ -20,7 +21,12 @@ import "AppModel.js" as AppModel
 // `omarchy bar set`, so shell.json stays the single source of truth.
 BarWidget {
   id: root
-  moduleName: "io.github.joeyvigil.taskbar"
+  moduleName: "io.github.jmr85.taskbar"
+
+  Commons.Translations {
+    id: strings
+    directory: Qt.resolvedUrl("i18n")
+  }
 
   // AppLibrary owns desktop-entry icon resolution (including the on-disk index
   // that catches icons Qt's cache missed). The bar hands us the shell root.
@@ -30,10 +36,104 @@ BarWidget {
   readonly property int iconSize: Math.max(8, root.setting("iconSize", 17))
   readonly property int gap: Math.max(0, root.setting("spacing", 2))
   readonly property bool runningIndicator: root.setting("runningIndicator", true) === true
+  readonly property bool highlightRunning: root.setting("highlightRunning", true) === true
+  readonly property bool windowCountBadge: root.setting("windowCountBadge", true) === true
   readonly property bool dimWhenClosed: root.setting("dimWhenClosed", true) === true
   readonly property bool cycleWindows: root.setting("cycleWindows", true) === true
+  readonly property bool wheelCycles: root.setting("wheelCycles", true) === true
+  readonly property bool previewOnHover: root.setting("previewOnHover", true) === true
   readonly property bool showAddButton: root.setting("showAddButton", true) === true
   readonly property bool showRunningApps: root.setting("showRunningApps", true) === true
+
+  // ----------------------------------------------------------- hover preview
+  //
+  // One card for the whole widget, anchored to whichever icon the pointer is
+  // over, rather than one popup window per slot. The card is built on
+  // PopupCard, so it fades and grows like the rest of the shell and takes part
+  // in the bar's one-popup-at-a-time coordination.
+  property var previewRecord: null
+  property Item previewAnchor: null
+  property bool previewOpen: false
+  property var hoverRecord: null
+  property Item hoverAnchor: null
+
+  readonly property var previewWindows: root.previewRecord
+    ? AppModel.windowsFor(root.previewRecord, root.windows) : []
+
+  function openPreview(record, anchorItem) {
+    if (!root.previewOnHover || !record || !anchorItem) return
+    if (AppModel.windowsFor(record, root.windows).length === 0) return
+
+    // The bar's own label would sit under the card; the card carries the app
+    // name in its header instead.
+    if (root.bar && typeof root.bar.hideTooltip === "function") root.bar.hideTooltip(anchorItem)
+
+    root.previewRecord = record
+    root.previewAnchor = anchorItem
+    root.previewOpen = true
+  }
+
+  function closePreview() {
+    root.previewOpen = false
+    root.previewRecord = null
+    root.previewAnchor = null
+  }
+
+  // Called by the slot delegates as their hover state changes. Leaving starts
+  // a short grace period so the pointer can cross the gap into the card;
+  // reaching another icon cancels the pending card and starts its own delay.
+  function noteHover(record, anchorItem, hovered) {
+    if (!hovered) {
+      openTimer.stop()
+      if (root.hoverAnchor === anchorItem) {
+        root.hoverRecord = null
+        root.hoverAnchor = null
+      }
+      if (root.previewOpen) closeTimer.restart()
+      return
+    }
+
+    closeTimer.stop()
+    openTimer.stop()
+    if (root.previewOpen && root.previewAnchor !== anchorItem) root.closePreview()
+
+    root.hoverRecord = record
+    root.hoverAnchor = anchorItem
+    if (root.previewOnHover && AppModel.windowsFor(record, root.windows).length > 0)
+      openTimer.restart()
+  }
+
+  onPreviewWindowsChanged: {
+    if (root.previewOpen && root.previewWindows.length === 0) root.closePreview()
+  }
+
+  Timer {
+    id: openTimer
+    interval: 380
+    repeat: false
+    onTriggered: root.openPreview(root.hoverRecord, root.hoverAnchor)
+  }
+
+  Timer {
+    id: closeTimer
+    interval: 260
+    repeat: false
+    onTriggered: if (!previewCard.containsMouse) root.closePreview()
+  }
+
+  // A passive hover card has no dismissal of its own: leaving the icon for
+  // somewhere other than the card, or leaving the card, must close it. This
+  // watches both while it is open, so it cannot outlive the pointer.
+  Timer {
+    interval: 300
+    repeat: true
+    running: root.previewOpen
+    onTriggered: {
+      var onIcon = root.previewAnchor && "tooltipHovered" in root.previewAnchor
+        && root.previewAnchor.tooltipHovered === true
+      if (!onIcon && !previewCard.containsMouse) root.closePreview()
+    }
+  }
 
   // Open apps that nothing pinned claims, rendered after the pinned strip and
   // gone again with their last window.
@@ -233,6 +333,39 @@ BarWidget {
     return String(record && record.desktopId || "")
   }
 
+  // Labels cross two boundaries this plugin does not own: the bar tooltip and
+  // the Omarchy menu picker, both of which paint with their own rich-text
+  // Text. Sanitising here keeps a markup-shaped desktop-entry name or window
+  // title from being interpreted there.
+  function plainLabel(record) {
+    return AppModel.plainText(root.labelFor(record), 120)
+  }
+
+  function iconNameFor(record) {
+    if (record && record.icon) return record.icon
+    var entry = root.desktopEntry(record)
+    return entry && entry.icon ? String(entry.icon) : String(record && record.desktopId || "")
+  }
+
+  readonly property color textColor: root.bar ? root.bar.foreground : Commons.Color.foreground
+  readonly property string textFont: root.bar ? root.bar.fontFamily : Style.font.family
+
+  function windowCountText(count) {
+    return strings.tn("widget.windows", count)
+      .arg(Commons.I18n.formatNumber(count))
+  }
+
+  // A running app with a preview card suppresses the bar tooltip: the card
+  // opens at the same 380ms beat and already carries the app name.
+  function tooltipFor(record, matched) {
+    if (!record) return ""
+    if (root.previewOnHover && matched.length > 0) return ""
+    var label = root.plainLabel(record)
+    if (matched.length === 0) return label
+    return strings.tn("widget.tooltip", matched.length)
+      .arg(label).arg(Commons.I18n.formatNumber(matched.length))
+  }
+
   // ------------------------------------------------------------- launch/focus
 
   // The shell one-liner that focuses `descriptor` while holding the pointer
@@ -340,6 +473,65 @@ BarWidget {
     }
     var index = AppModel.nextWindowIndex(matched, root.activeAddress, root.cycleWindows)
     root.focusWindow(matched[index])
+  }
+
+  // Wheel up walks back through the app's windows, wheel down forward, both
+  // wrapping. Nothing happens for an app with no windows open, so scrolling
+  // along the strip can never launch something by accident.
+  function cycleWithWheel(record, delta) {
+    if (!root.wheelCycles || !delta) return
+    var matched = AppModel.windowsFor(record, root.windows)
+    var index = AppModel.wheelWindowIndex(matched, root.activeAddress, delta)
+    if (index >= 0) root.focusWindow(matched[index])
+  }
+
+  // ------------------------------------------------------- window operations
+
+  // Both builders interpolate into Lua that hyprctl evaluates, so the same
+  // rule as focusCommand applies: the address is validated by AppModel and the
+  // workspace by a digits-only test, and nothing else reaches the string.
+  function windowCloseCommand(descriptors) {
+    var all = descriptors || []
+    var parts = []
+    for (var i = 0; i < all.length; i++) {
+      var hex = AppModel.windowAddressHex(all[i] ? all[i].address : "")
+      if (!hex) continue
+      var target = "address:" + hex
+      parts.push("hyprctl dispatch "
+        + Util.shellQuote('hl.dsp.window.close({ window = "' + target + '" })')
+        + " >/dev/null 2>&1 || hyprctl dispatch closewindow "
+        + Util.shellQuote(target) + " >/dev/null 2>&1")
+    }
+    return parts.join("; ")
+  }
+
+  function windowMoveCommand(descriptors, workspace) {
+    var ws = String(workspace || "")
+    if (!/^[1-9][0-9]{0,3}$/.test(ws)) return ""
+    var all = descriptors || []
+    var parts = []
+    for (var i = 0; i < all.length; i++) {
+      var hex = AppModel.windowAddressHex(all[i] ? all[i].address : "")
+      if (!hex) continue
+      var target = "address:" + hex
+      parts.push("hyprctl dispatch "
+        + Util.shellQuote('hl.dsp.window.move({ window = "' + target
+          + '", workspace = "' + ws + '", follow = false })')
+        + " >/dev/null 2>&1 || hyprctl dispatch movetoworkspacesilent "
+        + Util.shellQuote(ws + "," + target) + " >/dev/null 2>&1")
+    }
+    return parts.join("; ")
+  }
+
+  function closeWindows(record) {
+    var command = root.windowCloseCommand(AppModel.windowsFor(record, root.windows))
+    if (command && root.bar) root.bar.run(command)
+  }
+
+  function moveWindows(record, workspace) {
+    var command = root.windowMoveCommand(
+      AppModel.windowsFor(record, root.windows), workspace)
+    if (command && root.bar) root.bar.run(command)
   }
 
   // ----------------------------------------------------------------- editing
@@ -478,6 +670,9 @@ BarWidget {
 
   function runPicker(kind, context, prompt, options) {
     if (pickerProc.running) return
+    pickerProc.result = ""
+    pickerProc.collected = false
+    pickerProc.exited = false
     pickerProc.kind = kind
     pickerProc.context = context
     var command = Util.shellQuote(root.pickerPath) + " " + Util.shellQuote(prompt)
@@ -502,11 +697,13 @@ BarWidget {
       if (!entry || entry.noDisplay) continue
       var id = String(entry.id || "")
       if (!id || AppModel.hasDesktopId(root.pinned, id)) continue
-      options.push("\t" + String(entry.name || id) + "\t" + id)
+      var name = AppModel.plainText(entry.name || id, 120)
+      options.push("\t" + name + "\t" + id)
     }
 
     if (options.length === 0) return
-    root.runPicker("add", "", "Pin app", options)
+    root.closePreview()
+    root.runPicker("add", "", strings.t("widget.pinApp"), options)
   }
 
   function recordForKey(key) {
@@ -561,21 +758,77 @@ BarWidget {
 
   function promptActions(record) {
     if (!record) return
+    root.closePreview()
+
+    var matched = AppModel.windowsFor(record, root.windows)
+    var options = ["\t" + strings.t("action.newInstance") + "\tlaunch"]
+
     if (record.unpinned) {
-      root.runPicker("actions", record.key, root.labelFor(record),
-        ["\tNew instance\tlaunch", "\tPin to taskbar\tpin"])
-      return
+      options.push("\t" + strings.t("action.pin") + "\tpin")
+    } else {
+      var index = AppModel.indexOfKey(root.pinned, record.key)
+      if (index < 0) return
+      if (index > 0)
+        options.push("\t" + (root.vertical ? strings.t("action.moveUp") : strings.t("action.moveLeft")) + "\tback")
+      if (index < root.pinned.length - 1)
+        options.push("\t" + (root.vertical ? strings.t("action.moveDown") : strings.t("action.moveRight")) + "\tforward")
+      options.push("\t" + strings.t("action.unpin") + "\tunpin")
     }
 
-    var index = AppModel.indexOfKey(root.pinned, record.key)
-    if (index < 0) return
+    // Movement and closing act on the windows open right now, so they only
+    // appear when there are any.
+    if (matched.length > 0) {
+      options.push("\t" + strings.t("action.moveToWorkspace") + "\tworkspace")
+      options.push("\t" + (matched.length > 1
+        ? strings.t("action.closeWindows") : strings.t("action.closeWindow")) + "\tclose")
+    }
 
-    var options = ["\tNew instance\tlaunch"]
-    if (index > 0) options.push("\t" + (root.vertical ? "Move up" : "Move left") + "\tback")
-    if (index < root.pinned.length - 1) options.push("\t" + (root.vertical ? "Move down" : "Move right") + "\tforward")
-    options.push("\tUnpin\tunpin")
+    root.runPicker("actions", record.key, root.plainLabel(record), options)
+  }
 
-    root.runPicker("actions", record.key, root.labelFor(record), options)
+  // Workspaces come from the compositor, so named and non-contiguous ids are
+  // listed as they actually exist. Sorting keeps the picker stable between
+  // summons.
+  function promptWorkspace(key) {
+    var values = Hyprland.workspaces ? Hyprland.workspaces.values : []
+    var ids = []
+    var monitors = {}
+    for (var i = 0; i < values.length; i++) {
+      var value = values[i]
+      var id = value ? Number(value.id) : 0
+      if (!(id > 0) || ids.indexOf(id) !== -1) continue
+      ids.push(id)
+      monitors[id] = value.monitor ? String(value.monitor.name || "") : ""
+    }
+    if (ids.length === 0) for (var n = 1; n <= 10; n++) ids.push(n)
+    ids.sort(function(left, right) { return left - right })
+
+    var options = []
+    for (var j = 0; j < ids.length; j++) {
+      var label = strings.t("workspace.label").arg(Commons.I18n.formatNumber(ids[j]))
+      var monitor = AppModel.plainText(monitors[ids[j]] || "", 40)
+      if (monitor) label += " \u00b7 " + monitor
+      options.push("\t" + label + "\t" + ids[j])
+    }
+
+    root.closePreview()
+    root.runPicker("workspaces", key, strings.t("workspace.prompt"), options)
+  }
+
+  // Closing windows is not undoable, so it always goes through a confirmation
+  // that names how many will go.
+  function promptClose(key) {
+    var matched = AppModel.windowsFor(root.recordForKey(key), root.windows)
+    if (matched.length === 0) return
+    var prompt = strings.tn("action.closePrompt", matched.length)
+      .arg(Commons.I18n.formatNumber(matched.length))
+    root.closePreview()
+    // Two fields only: the menu renders a third as subtext, and "close" under
+    // "Close" is noise. The selection then comes back as the label itself, so
+    // the check below compares against the same translated string.
+    root.runPicker("close-confirm", key, prompt,
+      ["\t" + strings.t("action.confirm"),
+       "\t" + strings.t("action.cancel")])
   }
 
   // The menu returns "<label>\t<value>"; the value is the field we set.
@@ -590,6 +843,15 @@ BarWidget {
       root.pinApp(value)
       return
     }
+    if (kind === "workspaces") {
+      root.moveWindows(root.recordForKey(context), value)
+      return
+    }
+    if (kind === "close-confirm") {
+      if (value === strings.t("action.confirm"))
+        root.closeWindows(root.recordForKey(context))
+      return
+    }
     if (kind === "actions") root.runAction(context, value)
   }
 
@@ -601,6 +863,14 @@ BarWidget {
     }
     if (action === "pin") {
       root.pinRunning(root.recordForKey(key))
+      return
+    }
+    if (action === "workspace") {
+      root.promptWorkspace(key)
+      return
+    }
+    if (action === "close") {
+      root.promptClose(key)
       return
     }
 
@@ -658,18 +928,64 @@ BarWidget {
     id: pickerProc
     property string kind: ""
     property string context: ""
+    property string result: ""
+    property bool collected: false
+    property bool exited: false
+
+    // The selection and the exit can arrive in either order, so deliver only
+    // once both have. Running the next picker from here also guarantees this
+    // Process no longer reports running, which runPicker checks.
+    function maybeDeliver() {
+      if (!pickerProc.exited || !pickerProc.collected) return
+      var raw = pickerProc.result
+      pickerProc.result = ""
+      pickerProc.collected = false
+      pickerProc.exited = false
+      root.onPicked(pickerProc.kind, pickerProc.context, raw)
+    }
+
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.onPicked(pickerProc.kind, pickerProc.context, text)
+      onStreamFinished: {
+        pickerProc.result = text
+        pickerProc.collected = true
+        pickerProc.maybeDeliver()
+      }
+    }
+    onExited: {
+      pickerProc.exited = true
+      pickerProc.maybeDeliver()
     }
   }
 
   IpcHandler {
-    target: "io.github.joeyvigil.taskbar"
+    target: "io.github.jmr85.taskbar"
 
     function pin(desktopId: string): string { return root.pinApp(desktopId) }
     function unpin(desktopId: string): string { return root.unpinApp(desktopId) }
     function list(): string { return JSON.stringify(AppModel.serialize(root.pinned)) }
+    function windows(desktopId: string): string {
+      var record = null
+      for (var i = 0; i < root.slots.length; i++) {
+        if (root.slots[i].desktopId === desktopId) { record = root.slots[i]; break }
+      }
+      if (!record) return "[]"
+      return JSON.stringify(AppModel.windowsFor(record, root.windows).map(function(w) {
+        return { address: w.address, title: w.title }
+      }))
+    }
+    // Opens the same actions menu the right click shows, for a desktop id or a
+    // slot key (an unpinned app is "unpinned:<class>").
+    function actions(desktopId: string): string {
+      for (var i = 0; i < root.slots.length; i++) {
+        var record = root.slots[i]
+        if (record.desktopId === desktopId || record.key === desktopId) {
+          root.promptActions(record)
+          return "ok"
+        }
+      }
+      return "not found"
+    }
     function add(): void { root.promptAdd() }
   }
 
@@ -711,22 +1027,36 @@ BarWidget {
           return false
         }
 
-        readonly property var entry: root.desktopEntry(modelData)
-        readonly property string iconName: {
-          if (modelData.icon) return modelData.icon
-          return entry && entry.icon ? String(entry.icon) : String(modelData.desktopId || "")
-        }
+        readonly property string iconName: root.iconNameFor(modelData)
         readonly property string appLabel: root.labelFor(modelData)
 
         bar: root.bar
         labelVisible: false
         hasVisualContent: true
         dimmed: root.dimWhenClosed && !running
-        tooltipText: appLabel + (matched.length > 1 ? " (" + matched.length + " windows)" : "")
+        tooltipText: root.tooltipFor(modelData, matched)
         fixedWidth: root.vertical ? root.barSize : root.slotSize
         fixedHeight: root.vertical ? root.slotSize : root.barSize
 
         onPressed: function(button) { root.handlePress(slot.modelData, button) }
+        onWheelMoved: function(delta) { root.cycleWithWheel(slot.modelData, delta) }
+        onTooltipHoveredChanged: root.noteHover(slot.modelData, slot, slot.tooltipHovered)
+
+        // Running apps get a faint accent wash behind the icon, the focused one
+        // stronger, so the strip reads at a glance. The wash sits under the
+        // icon and takes no input.
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          radius: Style.space(4)
+          color: Commons.Color.accent
+          visible: root.highlightRunning && slot.running
+          opacity: slot.focused ? 0.24 : 0.13
+
+          Behavior on opacity {
+            NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
+          }
+        }
 
         Image {
           id: iconImage
@@ -750,6 +1080,7 @@ BarWidget {
         Text {
           visible: iconImage.status !== Image.Ready
           anchors.centerIn: iconImage
+          textFormat: Text.PlainText
           text: slot.appLabel.substring(0, 1).toUpperCase()
           color: slot.focused ? slot.activeColor : slot.foreground
           font.family: slot.fontFamily
@@ -757,18 +1088,51 @@ BarWidget {
           renderType: Text.NativeRendering
         }
 
+        // Accent rule under every running app, longer and solid when focused.
         Rectangle {
           visible: root.runningIndicator && slot.running
-          readonly property int extent: slot.matched.length > 1 ? 10 : 5
+          readonly property int extent: slot.focused ? 8 : 5
           width: root.vertical ? 2 : extent
           height: root.vertical ? extent : 2
           radius: 1
-          color: slot.focused ? slot.activeColor : slot.foreground
+          color: Commons.Color.accent
+          opacity: slot.focused ? 1 : 0.6
           x: root.vertical ? 2 : (slot.width - width) / 2
           y: root.vertical ? (slot.height - height) / 2 : slot.height - height - 3
 
           Behavior on color {
-            ColorAnimation { duration: 160 }
+            ColorAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
+          }
+          Behavior on opacity {
+            NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
+          }
+          Behavior on width {
+            NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
+          }
+        }
+
+        // Window count for apps with more than one open. The rule alone says
+        // "running"; the badge says "three of them".
+        Rectangle {
+          visible: root.windowCountBadge && slot.matched.length > 1
+          z: 2
+          width: Math.max(Style.space(12), badgeLabel.implicitWidth + Style.space(5))
+          height: Style.space(12)
+          radius: height / 2
+          color: Commons.Color.accent
+          x: slot.width - width + Style.space(1)
+          y: Style.space(1)
+
+          Text {
+            id: badgeLabel
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: Commons.I18n.formatNumber(slot.matched.length)
+            color: Commons.Color.background
+            font.family: slot.fontFamily
+            font.pixelSize: Style.font.caption
+            font.bold: true
+            renderType: Text.NativeRendering
           }
         }
       }
@@ -786,12 +1150,140 @@ BarWidget {
       // reads as an invitation rather than as decoration.
       dimmed: root.pinned.length > 0 && !tooltipHovered
       tooltipText: root.showAddButton
-        ? "Pin an app"
-        : "Taskbar: no apps pinned — add an \"apps\" list to this widget's shell.json entry"
+        ? strings.t("widget.pinTooltip")
+        : strings.t("widget.noPins")
       fixedWidth: root.vertical ? root.barSize : root.slotSize
       fixedHeight: root.vertical ? root.slotSize : root.barSize
 
       onPressed: function(button) { if (root.showAddButton) root.promptAdd() }
+    }
+  }
+
+  // Window list for a running app: the card that makes the strip a switcher
+  // rather than a launcher. One card serves every icon; rows focus a window.
+  PopupCard {
+    id: previewCard
+    anchorItem: root.previewAnchor || root
+    bar: root.bar
+    owner: root
+    open: root.previewOpen
+    triggerMode: "hover"
+    contentWidth: fittedContentWidth(Style.space(340))
+    contentHeight: fittedContentHeight(previewColumn.implicitHeight, Style.space(460))
+
+    Column {
+      id: previewColumn
+      width: parent.width
+      spacing: Style.space(4)
+
+      Row {
+        width: parent.width
+        spacing: Style.space(8)
+
+        Item {
+          width: Style.space(18)
+          height: Style.space(18)
+
+          Image {
+            id: headerIcon
+            anchors.fill: parent
+            sourceSize.width: width * 2
+            sourceSize.height: height * 2
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            source: root.previewRecord ? root.iconSource(root.iconNameFor(root.previewRecord)) : ""
+          }
+
+          Text {
+            visible: headerIcon.status !== Image.Ready
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: root.previewRecord
+              ? root.plainLabel(root.previewRecord).substring(0, 1).toUpperCase() : ""
+            color: root.textColor
+            font.family: root.textFont
+            font.pixelSize: Style.font.caption
+            renderType: Text.NativeRendering
+          }
+        }
+
+        Text {
+          width: parent.width - Style.space(18) - Style.space(8)
+          height: Style.space(18)
+          verticalAlignment: Text.AlignVCenter
+          textFormat: Text.PlainText
+          text: root.previewRecord ? root.plainLabel(root.previewRecord) : ""
+          color: root.textColor
+          font.family: root.textFont
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        visible: root.previewWindows.length > 1
+        text: root.windowCountText(root.previewWindows.length)
+        color: Util.alpha(root.textColor, 0.6)
+        font.family: root.textFont
+        font.pixelSize: Style.font.caption
+      }
+
+      Rectangle {
+        width: parent.width
+        height: 1
+        color: Util.alpha(root.textColor, 0.12)
+      }
+
+      Repeater {
+        model: root.previewWindows.slice(0, 8)
+
+        Rectangle {
+          id: previewRow
+          required property var modelData
+          width: previewColumn.width
+          height: Style.space(26)
+          radius: Style.space(4)
+          color: rowMouse.containsMouse ? Util.alpha(root.textColor, 0.08) : "transparent"
+
+          Text {
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(6)
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(6)
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: AppModel.plainText(previewRow.modelData.title, 120)
+            color: root.textColor
+            font.family: root.textFont
+            font.pixelSize: Style.font.bodySmall
+            elide: Text.ElideRight
+          }
+
+          MouseArea {
+            id: rowMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              root.focusWindow(previewRow.modelData)
+              root.closePreview()
+            }
+          }
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        visible: root.previewWindows.length > 8
+        text: strings.tn("preview.more", root.previewWindows.length - 8)
+          .arg(Commons.I18n.formatNumber(root.previewWindows.length - 8))
+        color: Util.alpha(root.textColor, 0.6)
+        font.family: root.textFont
+        font.pixelSize: Style.font.caption
+      }
     }
   }
 }

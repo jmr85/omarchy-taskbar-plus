@@ -1,0 +1,35 @@
+{
+  "widget.pinApp": "Fijar app",
+  "widget.pinTooltip": "Fijar una app",
+  "widget.noPins": "Taskbar: no hay apps fijadas — agrega una lista \"apps\" a la entrada de este widget en shell.json",
+  "widget.windows": {
+    "one": "%1 ventana",
+    "other": "%1 ventanas"
+  },
+  "widget.tooltip": {
+    "one": "%1 · %2 ventana",
+    "other": "%1 · %2 ventanas"
+  },
+  "action.newInstance": "Nueva instancia",
+  "action.pin": "Fijar a la barra",
+  "action.unpin": "Quitar de la barra",
+  "action.moveLeft": "Mover a la izquierda",
+  "action.moveRight": "Mover a la derecha",
+  "action.moveUp": "Mover arriba",
+  "action.moveDown": "Mover abajo",
+  "action.moveToWorkspace": "Mover a workspace…",
+  "action.closeWindow": "Cerrar ventana",
+  "action.closeWindows": "Cerrar ventanas",
+  "action.closePrompt": {
+    "one": "¿Cerrar %1 ventana?",
+    "other": "¿Cerrar %1 ventanas?"
+  },
+  "action.confirm": "Cerrar",
+  "action.cancel": "Cancelar",
+  "workspace.prompt": "Mover a workspace",
+  "workspace.label": "Workspace %1",
+  "preview.more": {
+    "one": "%1 ventana más",
+    "other": "%1 ventanas más"
+  }
+}

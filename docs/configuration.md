@@ -21,14 +21,19 @@ All of it sits inline on the widget's entry in `~/.config/omarchy/shell.json`:
 
 ```json
 {
-  "id": "io.github.joeyvigil.taskbar",
+  "id": "io.github.jmr85.taskbar",
   "apps": ["Alacritty", "chromium", "code"],
   "iconSize": 17,
   "spacing": 2,
   "runningIndicator": true,
+  "highlightRunning": true,
+  "windowCountBadge": true,
   "dimWhenClosed": true,
   "cycleWindows": true,
-  "showAddButton": true
+  "wheelCycles": true,
+  "previewOnHover": true,
+  "showAddButton": true,
+  "showRunningApps": true
 }
 ```
 
@@ -75,6 +80,24 @@ The long form takes overrides:
 | `label` | Tooltip override. |
 | `matchTitle` | Also match the regex against window titles. Off by default — titles produce false positives for browsers. |
 
+## Hover preview and window actions
+
+Hovering a running app for a moment opens a card with its windows, newest
+state included: titles come from the compositor and are refreshed while the
+card is open. Clicking a row focuses that window; the card closes as soon as
+the pointer leaves both the icon and the card. Set `previewOnHover` to `false`
+to keep the plain tooltip instead.
+
+Right-clicking an app adds two window operations when it has windows open:
+
+- **Move to workspace…** lists the workspaces that currently exist (named and
+  non-contiguous ids included) and moves every window of that app there
+  without following them.
+- **Close window(s)** always asks first, naming how many will close.
+
+Both are dispatched through Hyprland's Lua API (`hl.dsp.window.move` and
+`hl.dsp.window.close`), with the legacy `hyprctl` dispatchers as a fallback.
+
 ## Smart matching
 
 The running indicator only lights up if the plugin can tell which windows
@@ -100,10 +123,12 @@ hyprctl clients -j | jq -r '.[] | "\(.class)\t\(.title)"'
 ## From the command line
 
 ```bash
-omarchy-shell io.github.joeyvigil.taskbar list             # current pins, as JSON
-omarchy-shell io.github.joeyvigil.taskbar pin obsidian     # pin by desktop entry id
-omarchy-shell io.github.joeyvigil.taskbar unpin obsidian   # unpin
-omarchy-shell io.github.joeyvigil.taskbar add              # open the pin picker
+omarchy-shell io.github.jmr85.taskbar list             # current pins, as JSON
+omarchy-shell io.github.jmr85.taskbar pin obsidian     # pin by desktop entry id
+omarchy-shell io.github.jmr85.taskbar unpin obsidian   # unpin
+omarchy-shell io.github.jmr85.taskbar windows obsidian # open windows of a pinned app, as JSON
+omarchy-shell io.github.jmr85.taskbar actions obsidian # open the right-click actions menu
+omarchy-shell io.github.jmr85.taskbar add              # open the pin picker
 ```
 
 Handy for keybindings, or for adding a "Pin app to taskbar" entry to

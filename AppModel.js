@@ -304,6 +304,45 @@ function nextWindowIndex(windows, activeAddress, cycle) {
   return 0
 }
 
+// Index of the window a wheel step should focus. Wheel up (positive delta)
+// walks backwards through the list, wheel down forwards, wrapping at both ends.
+// With nothing of the app focused the first step lands on an end rather than
+// jumping into the middle. Returns -1 when there is nothing to focus.
+function wheelWindowIndex(windows, activeAddress, delta) {
+  var all = toArray(windows)
+  if (!all.length || !delta) return -1
+
+  var current = -1
+  for (var i = 0; i < all.length; i++) {
+    if (all[i] && all[i].address === activeAddress) {
+      current = i
+      break
+    }
+  }
+
+  if (current < 0) return delta > 0 ? all.length - 1 : 0
+  return delta > 0
+    ? (current - 1 + all.length) % all.length
+    : (current + 1) % all.length
+}
+
+// Flatten untrusted text for a sink this plugin does not own (bar tooltips,
+// the Omarchy menu picker). Those render their own Text items, so markup-shaped
+// input such as "<img src=...>" must not survive the hand-off. Tags go, stray
+// angle brackets and control/bidi characters become spaces, runs collapse, and
+// the result is capped so a hostile desktop entry cannot flood a tooltip.
+function plainText(value, limit) {
+  var text = String(value === null || value === undefined ? "" : value)
+  text = text.replace(/<[^>]*>/g, " ")
+  text = text.replace(/[<>]/g, " ")
+  text = text.replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, " ")
+  text = text.replace(/\s+/g, " ").trim()
+
+  var max = limit && limit > 0 ? limit : 200
+  if (text.length > max) text = text.substring(0, Math.max(0, max - 1)) + "\u2026"
+  return text
+}
+
 // StartupWMClass is only worth trusting when it looks like a real class.
 // Arch's chromium.desktop ships `StartupWMClass=@@startup_wm_class`, an
 // unsubstituted packaging template; storing that as a match produces an entry

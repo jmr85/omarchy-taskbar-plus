@@ -1,114 +1,136 @@
-# Taskbar
+# Taskbar+
 
-Pinned app icons for the [Omarchy](https://omarchy.org/) bar.
+Pinned app icons for the [Omarchy](https://omarchy.org/) bar, with window
+previews, scroll-to-cycle, running-app highlights, and window actions.
 
-Click an icon to launch the app — or to focus it, if it's already open. A small
-indicator under each icon shows what's running and which app you're in.
+A fork of [Joey Vigil's taskbar](https://github.com/joeyvigil/omarchy-taskbar),
+extended and published by [Juan Martin Ruiz](https://github.com/jmr85).
 
-Pin and unpin from the bar itself. No config file editing.
-
-![The taskbar in the Omarchy bar](docs/bar.png)
+![Taskbar+ in the Omarchy bar](preview.png)
 
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/joeyvigil/omarchy-taskbar.git --enable --yes
-omarchy bar move io.github.joeyvigil.taskbar --section left
+omarchy plugin add https://github.com/jmr85/omarchy-taskbar-plus.git --enable --yes
+omarchy bar move io.github.jmr85.taskbar --section left
 ```
 
-Needs Omarchy 4+, with the built-in `omarchy.menu` plugin enabled.
+Omarchy Quattro (4.x) is required, with the built-in `omarchy.menu` plugin
+enabled. The pin and actions pickers are rendered by that menu; without it the
+icons still launch and focus, but the editing menus do not open.
+
+Other dependencies:
+
+- `jq`, used by `bin/taskbar-pick` (already a hard dependency of Omarchy).
+- Hyprland, for window matching, focusing, moving and closing. The widget
+  dispatches through Hyprland's Lua API and falls back to the legacy
+  `hyprctl` dispatchers on older configs.
+- No network access. The plugin reads local desktop entries, local icon
+  directories, and the compositor's window list.
+
+## Why this fork
+
+| Feature | What it does |
+|---|---|
+| **Window previews** | Hover a running app for a card listing its windows; click a row to focus that window. |
+| **Scroll to cycle** | Wheel over an app walks through its windows, wrapping at both ends. |
+| **Running highlight** | Running apps get an accent wash behind the icon and an accent rule under it; the focused app is stronger. |
+| **Window count badge** | A number appears on the icon when the app has two or more windows. |
+| **Window actions** | Right click gains **Move to workspace…** (compositor workspace picker) and **Close window(s)**, with a confirmation. |
+| **English / Spanish** | Tooltips, actions and pickers follow the Omarchy language, live, through `i18n/`. |
+| **Plain-text hardening** | App names and window titles are flattened before reaching the bar tooltip or the menu picker; every `Text` is `PlainText`. |
+| **Shell motion** | Animations go through `Style.duration()`, so `omarchy toggle animations` turns them off. |
 
 ## Using it
 
 | Input | What it does |
 |---|---|
-| **Left click** | Launch the app, or focus it if it's already running |
+| **Left click** | Launch the app, or focus it if it is already running |
 | **Left click** (already focused) | Cycle to that app's next window |
+| **Hover** (running app) | Window list; click a row to focus that window |
+| **Wheel** (running app) | Previous/next window of that app |
 | **Middle click** | Always launch a new instance |
-| **Right click** | Actions: new instance, move left/right, unpin |
+| **Right click** | New instance, pin/unpin, reorder, move to workspace, close windows |
 | **Click the `+`** | Pin an app, from a searchable list of everything installed |
-| **Hover** | App name, plus window count when more than one is open |
 
-Open an app you haven't pinned and it gets an icon too, after the pinned ones,
-with the same click behaviour. That icon disappears when its last window
-closes. Right-click it to keep it for good. Turn this off with
-`showRunningApps` if you only want the apps you chose.
-
-<img src="docs/picker.png" alt="Pinning an app from the bar" width="420">
+An app that is open but not pinned gets an icon after the pinned ones, and
+loses it when its last window closes. Right-click it to keep it for good. Turn
+that off with `showRunningApps` if you only want the apps you chose.
 
 Pinning through the `+` also works out how to recognise that app's windows, so
-the running indicator just works — including for Omarchy web apps, which
-Chromium reports under names like `chrome-discord.com__channels_@me-Default`.
+the running indicator works without knowing what a window class is, including
+for Omarchy web apps.
 
 ## Settings
 
-Stored inline on the widget's entry in `~/.config/omarchy/shell.json`, which
-hot-reloads on save. The bar UI writes to this same place.
+Settings live inline on the widget's entry in `~/.config/omarchy/shell.json`,
+which hot-reloads on save. The bar UI writes to the same place.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `apps` | `[]` | The pinned entries, in bar order |
 | `iconSize` | `17` | Icon edge length in pixels |
 | `spacing` | `2` | Gap between icons in pixels |
-| `runningIndicator` | `true` | Draw the running/focused indicator |
+| `runningIndicator` | `true` | Draw the running/focused rule |
+| `highlightRunning` | `true` | Accent wash behind icons of running apps |
+| `windowCountBadge` | `true` | Badge with the window count above one |
 | `dimWhenClosed` | `true` | Fade icons for apps with no open window |
 | `cycleWindows` | `true` | Re-clicking a focused app advances to its next window |
+| `wheelCycles` | `true` | Scrolling over an icon cycles its windows |
+| `previewOnHover` | `true` | Window list card when hovering a running app |
 | `showAddButton` | `true` | Show the trailing `+` for pinning apps |
 | `showRunningApps` | `true` | Also show open apps that are not pinned |
 
-> **Disabling the widget discards your pins.** Omarchy stores widget settings
-> inline on the bar layout entry, and disabling removes that entry. Copy the
-> `apps` array out first if you plan to disable and re-enable.
+With `previewOnHover` on, a running app shows its window card instead of the
+bar tooltip; apps with no windows keep the plain tooltip.
+
+Advanced per-app overrides, custom commands and troubleshooting live in
+[the configuration notes](docs/configuration.md).
+
+## How pins are stored
+
+Pins are part of this widget's own entry in `shell.json`. Disabling the widget
+or removing the plugin removes that entry, and with it the pin list. Copy the
+`apps` array out first if you plan to disable and re-enable. The plugin writes
+only its own entry, through the host's `updateEntryInline` seam; it never
+rewrites the rest of the bar configuration.
+
+## Development
+
+```
+manifest.json      plugin declaration and setting schema
+BarWidget.qml      the widget the bar mounts
+AppModel.js        entry normalization, window matching, list editing
+bin/taskbar-pick   shows a list in the Omarchy menu, prints the choice
+i18n/              English and Spanish string catalogs
+tests/             node tests for the pure helpers
+```
+
+Run the tests and validate before opening a change:
+
+```bash
+node tests/appmodel.test.js
+omarchy plugin validate .
+/usr/lib/qt6/bin/qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml
+```
+
+Saved files under `~/.config/omarchy/plugins/` reload automatically. Restart
+the shell when changing settings wiring or IPC methods:
+`omarchy restart shell`.
 
 ## Remove
 
 ```bash
-omarchy plugin remove io.github.joeyvigil.taskbar
+omarchy plugin remove io.github.jmr85.taskbar
 ```
 
-This takes the pin list with it, for the same reason as above.
+This takes the pin list with it, for the same reason as disabling the widget.
 
-## Changes
+## Credits and license
 
-**0.4.2** — Icons show again instead of letters. Omarchy 4.0.3 also stopped
-handing bar widgets the shell's app library, which is what had been resolving
-icons; without it the taskbar fell back to the system icon theme, and anyone
-whose configured theme is missing or incomplete got a letter in every slot.
-The taskbar now finds icons itself, so it no longer depends on the theme being
-installed. If icons are missing in other apps too, the theme itself is worth
-checking.
+Forked from [joeyvigil/omarchy-taskbar](https://github.com/joeyvigil/omarchy-taskbar)
+by [Joey Vigil](https://github.com/joeyvigil), whose original layout, window
+matching and picker this plugin still builds on.
 
-**0.4.1** — Pinning works again on Omarchy 4.0.3. That release tightened
-what plugins may write to the bar config, and the taskbar's pin, unpin, and
-move actions were quietly declined: the `+` picker opened and let you choose
-an app, but nothing ever stuck. Pins are now saved through the widget's own
-settings entry, which is allowed on every Omarchy 4 release. Update with
-`omarchy plugin update io.github.joeyvigil.taskbar` and restart the shell.
-Thanks to @Macho0x for tracking this down and fixing it.
-
-**0.4.0** — Open apps you haven't pinned now appear in the bar while they're
-running, after the pinned icons, and disappear when their last window closes.
-They work like any other icon: click to focus and cycle through that app's
-windows, middle-click for a new instance. Right-click one to pin it for good.
-Set `showRunningApps` to `false` to go back to a pinned-only strip.
-
-**0.3.1** — Clicking a pinned icon repeatedly now really does cycle through
-that app's windows. Focusing a window makes Hyprland warp the pointer to the
-middle of it (`cursor:no_warps` defaults to `false`), which moved the pointer
-off the icon, so the second click landed on the window instead of the bar and
-cycling never got past the first window. The pointer is now put back where it
-was, so repeated clicks keep landing on the icon.
-
-**0.3.0** — Pin and unpin from the bar itself.
-
-## More
-
-- [Advanced configuration](docs/configuration.md) — per-app overrides, custom
-  launch commands, the command-line interface, and what to do when an icon
-  never lights up.
-- [Development notes](docs/development.md) — layout of the code, and two
-  non-obvious things about the plugin host worth knowing before changing it.
-
-## License
-
-MIT
+MIT License. See [LICENSE](LICENSE): Copyright (c) 2026 Joey Vigil, with
+modifications Copyright (c) 2026 Juan Martin Ruiz.

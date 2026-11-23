@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.joeyvigil.taskbar",
-  "name": "Taskbar",
-  "version": "0.4.2",
-  "author": "Joey Vigil",
+  "id": "io.github.jmr85.taskbar",
+  "name": "Taskbar+",
+  "version": "1.0.0",
+  "author": "Juan Martin Ruiz",
   "license": "MIT",
-  "description": "Pinned app icons in the bar with running-state indicators; pin and unpin from the bar itself",
+  "description": "Pinned apps for the Omarchy bar with hover window previews and click-to-focus, scroll-to-cycle, running-app highlights, window-count badges, workspace and close-window actions, and English/Spanish strings.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,8 +13,8 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Taskbar",
-    "description": "Pinned app icons with running indicators; left = launch or focus, right = actions, middle = new instance",
+    "displayName": "Taskbar+",
+    "description": "Pinned apps with running highlights, hover previews and window actions; left = launch or focus, wheel = cycle windows, right = actions, middle = new instance",
     "category": "Launcher",
     "allowMultiple": false,
     "defaultSection": "left",
@@ -23,8 +23,12 @@
       "iconSize": 17,
       "spacing": 2,
       "runningIndicator": true,
+      "highlightRunning": true,
+      "windowCountBadge": true,
       "dimWhenClosed": true,
       "cycleWindows": true,
+      "wheelCycles": true,
+      "previewOnHover": true,
       "showAddButton": true,
       "showRunningApps": true
     },
@@ -50,6 +54,16 @@
         "label": "Show running indicator"
       },
       {
+        "key": "highlightRunning",
+        "type": "bool",
+        "label": "Tint icons of running apps"
+      },
+      {
+        "key": "windowCountBadge",
+        "type": "bool",
+        "label": "Show a badge when an app has several windows"
+      },
+      {
         "key": "dimWhenClosed",
         "type": "bool",
         "label": "Dim icons for apps that are not running"
@@ -58,6 +72,16 @@
         "key": "cycleWindows",
         "type": "bool",
         "label": "Re-clicking a focused app cycles its windows"
+      },
+      {
+        "key": "wheelCycles",
+        "type": "bool",
+        "label": "Scrolling over an icon cycles its windows"
+      },
+      {
+        "key": "previewOnHover",
+        "type": "bool",
+        "label": "Show a window list when hovering a running app"
       },
       {
         "key": "showAddButton",

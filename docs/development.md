@@ -5,6 +5,8 @@ manifest.json      plugin declaration and setting schema
 BarWidget.qml      the widget the bar mounts
 AppModel.js        entry normalization, window matching, list editing
 bin/taskbar-pick   shows a list in the Omarchy menu, prints the choice
+i18n/              per-language string catalogs (en, es-MX)
+tests/             node tests for the pure helpers
 ```
 
 Two things worth knowing before changing this code:
